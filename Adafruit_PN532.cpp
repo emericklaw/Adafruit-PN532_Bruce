@@ -79,6 +79,8 @@ byte pn532response_firmwarevers[] = {
 byte pn532_packetbuffer[PN532_PACKBUFFSIZ]; ///< Packet buffer used in various
                                             ///< transactions
 
+Adafruit_PN532::Adafruit_PN532() {}
+
 /**************************************************************************/
 /*!
     @brief  Instantiates a new PN532 class using software SPI.
@@ -138,6 +140,32 @@ Adafruit_PN532::Adafruit_PN532(uint8_t reset, HardwareSerial *theSer)
     : _reset(reset) {
   pinMode(_reset, OUTPUT);
   ser_dev = theSer;
+}
+
+/**************************************************************************/
+/*!
+    @brief  Set PN532 class to use software SPI.
+
+    @param  clk       SPI clock pin (SCK)
+    @param  miso      SPI MISO pin
+    @param  mosi      SPI MOSI pin
+    @param  ss        SPI chip select pin (CS/SSEL)
+*/
+/**************************************************************************/
+void Adafruit_PN532::setInterface(uint8_t clk, uint8_t miso, uint8_t mosi, uint8_t ss) {
+  _cs = ss;
+  spi_dev = new Adafruit_SPIDevice(ss, clk, miso, mosi, 1000000, SPI_BITORDER_LSBFIRST, SPI_MODE0);
+}
+
+/**************************************************************************/
+/*!
+    @brief  Set PN532 class to use I2C.
+
+    @param  theWire   pointer to I2C bus to use
+*/
+/**************************************************************************/
+void Adafruit_PN532::setInterface(uint8_t sdaPin, uint8_t sclPin) {
+  i2c_dev = new Adafruit_I2CDevice(PN532_I2C_ADDRESS, sdaPin, sclPin);
 }
 
 /**************************************************************************/
@@ -325,9 +353,7 @@ bool Adafruit_PN532::sendCommandCheckAck(uint8_t *cmd, uint8_t cmdlen,
 
   // I2C works without using IRQ pin by polling for RDY byte
   // seems to work best with some delays between transactions
-  uint8_t SLOWDOWN = 0;
-  if (i2c_dev)
-    SLOWDOWN = 1;
+  uint8_t SLOWDOWN = 1;
 
   // write the command
   writecommand(cmd, cmdlen);
@@ -651,6 +677,91 @@ bool Adafruit_PN532::readDetectedPassiveTargetID(uint8_t *uid,
 #endif
 
   return 1;
+}
+
+/**************************************************************************/
+/*!
+    Reads the ID of the passive target the reader has deteceted.
+
+    @returns 1 if everything executed properly, 0 for an error
+*/
+/**************************************************************************/
+bool Adafruit_PN532::readDetectedPassiveTargetID() {
+  // read data packet
+  readdata(pn532_packetbuffer, 20);
+  // check some basic stuff
+
+  /* ISO14443A card response should be in the following format:
+
+    byte            Description
+    -------------   ------------------------------------------
+    b0..6           Frame header and preamble
+    b7              Tags Found
+    b8              Tag Number (only one used in this example)
+    b9..10          SENS_RES
+    b11             SEL_RES
+    b12             NFCID Length
+    b13..NFCIDLen   NFCID                                      */
+
+#ifdef MIFAREDEBUG
+  PN532DEBUGPRINT.print(F("Found "));
+  PN532DEBUGPRINT.print(pn532_packetbuffer[7], DEC);
+  PN532DEBUGPRINT.println(F(" tags"));
+#endif
+  if (pn532_packetbuffer[7] != 1)
+    return 0;
+
+  for (int i = 0; i < 2; i++) targetUid.atqaByte[i] = pn532_packetbuffer[9 + i];
+  targetUid.sak = pn532_packetbuffer[11];
+  targetUid.size = pn532_packetbuffer[12];
+  for (uint8_t i = 0; i < pn532_packetbuffer[12]; i++) {
+    targetUid.uidByte[i] = pn532_packetbuffer[13 + i];
+  }
+
+#ifdef MIFAREDEBUG
+  PN532DEBUGPRINT.print(F("ATQA:"));
+  for (uint8_t i = 0; i < 2; i++) {
+    PN532DEBUGPRINT.print(F(" 0x"));
+    PN532DEBUGPRINT.print(targetUid.atqaByte[i], HEX);
+  }
+  PN532DEBUGPRINT.print(F("SAK: 0x"));
+  PN532DEBUGPRINT.println(targetUid.sak, HEX);
+  PN532DEBUGPRINT.print(F("UID:"));
+  for (uint8_t i = 0; i < targetUid.size; i++) {
+    PN532DEBUGPRINT.print(F(" 0x"));
+    PN532DEBUGPRINT.print(targetUid.uidByte[i], HEX);
+  }
+  PN532DEBUGPRINT.println();
+#endif
+
+  return 1;
+}
+
+String Adafruit_PN532::PICC_GetTypeName(byte sak) {
+	if (sak & 0x04) { // UID not complete
+		return "SAK indicates UID is not complete.";
+	}
+
+	switch (sak) {
+		case 0x09:	return "MIFARE Mini, 320 bytes";	break;
+		case 0x08:	return "MIFARE 1KB";		break;
+		case 0x18:	return "MIFARE 4KB";		break;
+		case 0x00:	return "MIFARE Ultralight or Ultralight C";		break;
+		case 0x10:
+		case 0x11:	return "MIFARE Plus";	break;
+		case 0x01:	return "MIFARE TNP3XXX";		break;
+		default:	break;
+	}
+
+	if (sak & 0x20) {
+		return "PICC compliant with ISO/IEC 14443-4";
+	}
+
+	if (sak & 0x40) {
+		return "PICC compliant with ISO/IEC 18092 (NFC)";
+	}
+
+	return "Unknown type";
 }
 
 /**************************************************************************/
@@ -1341,7 +1452,7 @@ uint8_t Adafruit_PN532::ntag2xx_ReadPage(uint8_t page, uint8_t *buffer) {
     /* Note that the command actually reads 16 byte or 4  */
     /* pages at a time ... we simply discard the last 12  */
     /* bytes                                              */
-    memcpy(buffer, pn532_packetbuffer + 8, 4);
+    memcpy(buffer, pn532_packetbuffer + 8, 16);
   } else {
 #ifdef MIFAREDEBUG
     PN532DEBUGPRINT.println(F("Unexpected response reading block: "));
@@ -1817,4 +1928,116 @@ void Adafruit_PN532::writecommand(uint8_t *cmd, uint8_t cmdlen) {
       ser_dev->write(packet, 8 + cmdlen);
     }
   }
+}
+
+
+/**************************************************************************/
+/*!
+    @brief  Builds the command to send to write to the PN532 registers
+    @param  reg       Pointer to the command buffer, goes in the form of
+                      ADDR1H ADDR1L VAL1...ADDRnH ADDRnL VALn
+    @param  len       Command length in bytes
+*/
+/**************************************************************************/
+
+bool Adafruit_PN532::WriteRegister(uint8_t *reg, uint8_t len) {
+  uint8_t cmd[len + 1];
+  uint8_t result[8];
+  cmd[0] = PN532_COMMAND_WRITEREGISTER;
+  for (uint8_t i = 0; i < len; i++) {
+    cmd[i + 1] = reg[i];
+  }
+
+  if (!sendCommandCheckAck(cmd, len + 1)) return false;
+
+  readdata(result, 8);
+  return true;
+}
+
+/**************************************************************************/
+/*!
+    @brief  Builds the command to send commands directly to the PICC
+            Works like inDataExchange but doesn't handles all the
+            protocol features
+    @param  data      Pointer to the command buffer
+    @param  len       Command length in bytes
+*/
+/**************************************************************************/
+bool Adafruit_PN532::InCommunicateThru(uint8_t *data, uint8_t len) {
+  uint8_t cmd[len + 1];
+  uint8_t result[8];
+  cmd[0] = PN532_COMMAND_INCOMMUNICATETHRU;
+  for (uint8_t i = 0; i < len; i++) {
+    cmd[i + 1] = data[i];
+  }
+  if (!sendCommandCheckAck(cmd, len + 1)) return false;
+
+  readdata(result, 8);
+  // If byte 8 isn't 0x00 we probably have an error,
+  if (result[7] != 0x00) return false;
+  return true;
+}
+
+/**************************************************************************/
+/*!
+    @brief  Performs the command sequence in some chinese MiFare Classic tags
+            that unlocks a special backdoor to perform write/read
+            commands without authentication
+                        >HALT + CRC (50 00 57 CD)
+                        >UNLOCK1	(40) 7 bits
+                        <ACK		(A) 4 bits
+                        >UNLOCK2	(43)
+                        <ACK		(A) 4 bits
+*/
+/**************************************************************************/
+bool Adafruit_PN532::UnlockBackdoor() {
+  // Disable automatic CRC performed by the PN532
+  uint8_t regState1[6] = {0x63, 0x02, 0x00, 0x63, 0x03, 0x00};
+  if (!WriteRegister(regState1, 6)) {
+    return false;
+  }
+  // HALT
+  uint8_t halt[4] = {0x50, 0x00, 0x57, 0xcd};
+  InCommunicateThru(halt, 4);
+
+  // Set BitFraming to only send 7 bits
+  uint8_t reg1[3] = {0x63, 0x3d, 0x07};
+  if (!WriteRegister(reg1, 3)) {
+    return false;
+  }
+  // UNLOCK1
+  bool unlockSuccess;
+  uint8_t unlock1[1] = {0x40};
+  unlockSuccess = InCommunicateThru(unlock1, 1);
+
+  // Set BitFraming back to normal
+  uint8_t reg2[3] = {0x63, 0x3d, 0x00};
+  if (!WriteRegister(reg2, 3)) {
+    return false;
+  }
+  // UNLOCK2
+  if (unlockSuccess == true) {
+    uint8_t unlock2[1] = {0x43};
+    if (!InCommunicateThru(unlock2, 1)) {
+      return false;
+    }
+  }
+  // Enable automatic CRC performed by the PN532
+  uint8_t regState2[6] = {0x63, 0x02, 0x80, 0x63, 0x03, 0x80};
+  if (!WriteRegister(regState2, 6)) {
+    return false;
+  }
+  if (unlockSuccess == false) {
+    return false;
+  }
+  return true;
+}
+
+bool Adafruit_PN532::mifareclassic_WriteBlock0(uint8_t *data) {
+  if (!data || !UnlockBackdoor()) return false;
+
+#ifdef MIFAREDEBUG
+  PN532DEBUGPRINT.println(F("Unlock success. WriteDataBlock 0"));
+#endif
+  return mifareclassic_WriteDataBlock(0, data);
 }

@@ -15,8 +15,8 @@
 
 #include "Arduino.h"
 
-#include <Adafruit_I2CDevice.h>
-#include <Adafruit_SPIDevice.h>
+#include "Adafruit_I2CDevice.h"
+#include "Adafruit_SPIDevice.h"
 
 #define PN532_PREAMBLE (0x00)   ///< Command sequence start, byte 1/3
 #define PN532_STARTCODE1 (0x00) ///< Command sequence start, byte 2/3
@@ -140,6 +140,16 @@
  */
 class Adafruit_PN532 {
 public:
+  typedef struct {
+    byte size;
+    byte uidByte[10];
+    byte sak;
+    byte atqaByte[2];
+  } Uid;
+
+  Uid targetUid;
+
+  Adafruit_PN532();
   Adafruit_PN532(uint8_t clk, uint8_t miso, uint8_t mosi,
                  uint8_t ss);                          // Software SPI
   Adafruit_PN532(uint8_t ss, SPIClass *theSPI = &SPI); // Hardware SPI
@@ -150,6 +160,10 @@ public:
 
   void reset(void);
   void wakeup(void);
+  void setInterface(uint8_t clk, uint8_t miso, uint8_t mosi, uint8_t ss);
+  void setInterface(uint8_t sdaPin, uint8_t sclPin);
+
+  String PICC_GetTypeName(byte sak);
 
   // Generic PN532 functions
   bool SAMConfig(void);
@@ -164,8 +178,9 @@ public:
   bool readPassiveTargetID(
       uint8_t cardbaudrate, uint8_t *uid, uint8_t *uidLength,
       uint16_t timeout = 0); // timeout 0 means no timeout - will block forever.
-  bool startPassiveTargetIDDetection(uint8_t cardbaudrate);
+  bool startPassiveTargetIDDetection(uint8_t cardbaudrate = PN532_MIFARE_ISO14443A);
   bool readDetectedPassiveTargetID(uint8_t *uid, uint8_t *uidLength);
+  bool readDetectedPassiveTargetID();
   bool inDataExchange(uint8_t *send, uint8_t sendLength, uint8_t *response,
                       uint8_t *responseLength);
   bool inListPassiveTarget();
@@ -174,6 +189,8 @@ public:
   uint8_t setDataTarget(uint8_t *cmd, uint8_t cmdlen);
 
   // Mifare Classic functions
+  bool UnlockBackdoor();
+	bool mifareclassic_WriteBlock0(uint8_t *data);
   bool mifareclassic_IsFirstBlock(uint32_t uiBlock);
   bool mifareclassic_IsTrailerBlock(uint32_t uiBlock);
   uint8_t mifareclassic_AuthenticateBlock(uint8_t *uid, uint8_t uidLen,
@@ -212,6 +229,8 @@ private:
   bool isready();
   bool waitready(uint16_t timeout);
   bool readack();
+  bool WriteRegister(uint8_t *reg, uint8_t len);
+  bool InCommunicateThru(uint8_t *data, uint8_t len);
 
   Adafruit_SPIDevice *spi_dev = NULL;
   Adafruit_I2CDevice *i2c_dev = NULL;
