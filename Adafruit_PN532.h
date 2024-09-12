@@ -187,6 +187,10 @@ public:
   uint8_t AsTarget();
   uint8_t getDataTarget(uint8_t *cmd, uint8_t *cmdlen);
   uint8_t setDataTarget(uint8_t *cmd, uint8_t cmdlen);
+  bool TgInitAsTarget();
+  bool TgGetData(uint8_t * response, uint8_t * responseLength);
+  bool TgSetData(uint8_t * send, uint8_t sendLength);
+  int16_t inRelease(const uint8_t relevantTarget = 0);
 
   // Mifare Classic functions
   bool UnlockBackdoor();
