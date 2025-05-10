@@ -534,6 +534,15 @@ bool Adafruit_PN532::SAMConfig(void) {
   return (pn532_packetbuffer[offset] == 0x15);
 }
 
+bool Adafruit_PN532::powerDown() {
+    pn532_packetbuffer[0] = PN532_COMMAND_POWERDOWN;
+    pn532_packetbuffer[1] = 0xC0; // I2C or SPI Wakeup
+    pn532_packetbuffer[2] = 0x00; // no IRQ
+
+    return sendCommandCheckAck(pn532_packetbuffer, 3);
+}
+
+
 /**************************************************************************/
 /*!
     Sets the MxRtyPassiveActivation byte of the RFConfiguration register
