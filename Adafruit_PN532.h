@@ -235,7 +235,7 @@ public:
   // Felica functions
   uint8_t felica_Polling(uint16_t systemCode, uint8_t requestCode, uint8_t *idm,
                          uint8_t *pmm, uint16_t *systemCodeResponse,
-                         uint16_t timeout = 1000);
+                         uint16_t timeout = 100);
   uint8_t felica_SendCommand(const uint8_t *command, uint8_t commandlength,
                              uint8_t responseLength);
   uint8_t felica_ReadWithoutEncryption(uint8_t numService,
