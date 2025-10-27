@@ -208,6 +208,10 @@ public:
   bool TgSetData(uint8_t * send, uint8_t sendLength);
   int16_t inRelease(const uint8_t relevantTarget = 0);
 
+
+  bool EMVinDataExchange(uint8_t *send, uint8_t sendLength, uint8_t *response,
+                      uint8_t *responseLength);
+
   // Mifare Classic functions
   bool UnlockBackdoor();
 	bool mifareclassic_WriteBlock0(uint8_t *data);
